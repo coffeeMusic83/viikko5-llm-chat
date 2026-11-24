@@ -1,0 +1,85 @@
+name: CI/CD
+
+# Lint and tests on every push and every pull request.
+# Deployment only for pushes to main, and only if the test job passed.
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Lint and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"   # same Python as Ubuntu 22.04 on the server
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Lint (ruff)
+        run: ruff check .
+
+      - name: Tests (pytest, language model and database mocked)
+        run: pytest -v
+
+  deploy:
+    name: Deploy to cPouta
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: production
+      cancel-in-progress: false
+    env:
+      SERVER_HOST: ${{ secrets.SERVER_HOST }}
+      DEPLOY_USER: deploy
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up SSH key and known_hosts from secrets
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+
+      - name: Copy the code to the server
+        run: |
+          rsync -az --delete --exclude '.git/' \
+            -e "ssh -i $HOME/.ssh/deploy_key -o StrictHostKeyChecking=yes" \
+            ./ "$DEPLOY_USER@$SERVER_HOST:incoming/viikko5/"
+
+      - name: Install dependencies, update Nginx and systemd, restart the service
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes "$DEPLOY_USER@$SERVER_HOST" \
+            "sudo /usr/local/sbin/viikko5-deploy $GITHUB_SHA"
+
+      - name: Verify the new version from the internet (/viikko5/health)
+        run: |
+          for i in $(seq 1 20); do
+            body=$(curl -fsS --max-time 10 "http://$SERVER_HOST/viikko5/health" || true)
+            echo "attempt $i: $body"
+            if printf '%s' "$body" | python3 -c 'import json,sys; sys.exit(0 if json.load(sys.stdin).get("commit") == sys.argv[1] else 1)' "$GITHUB_SHA" 2>/dev/null; then
+              echo "Deployment verified: $GITHUB_SHA is running."
+              exit 0
+            fi
+            sleep 3
+          done
+          echo "The health endpoint does not return $GITHUB_SHA"
+          exit 1
+
+      - name: Remove the key from the runner
+        if: always()
+        run: rm -f ~/.ssh/deploy_key

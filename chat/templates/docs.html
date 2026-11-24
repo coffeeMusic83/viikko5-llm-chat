@@ -66,7 +66,7 @@
     <table>
       <tr><th>Job</th><th>When</th><th>What it does</th></tr>
       <tr><td class="mono">test</td><td>every push and PR</td>
-          <td>Installs Python 3.10 (same as Ubuntu 22.04), runs the linter <code>ruff check .</code> and the tests <code>pytest</code>.
+          <td>Installs Python 3.14 (same as Ubuntu 26.04), runs the linter <code>ruff check .</code> and the tests <code>pytest</code>.
               The tests replace the language model and the database with fakes, so they need neither.</td></tr>
       <tr><td class="mono">deploy</td><td>push to <code>main</code> only, <code>needs: test</code></td>
           <td>Runs only if the test job passed. Copies the code with <code>rsync</code> over SSH as user <code>deploy</code> and runs
@@ -188,7 +188,7 @@
     <p class="pending" style="margin:0">pending</p>
   </div>
 
-  <footer>Served by Nginx + Gunicorn on server A · Ubuntu 22.04 LTS · CSC cPouta · Week 5 · commit {{ short_revision }}</footer>
+  <footer>Served by Nginx + Gunicorn on server A · Ubuntu 26.04 LTS · CSC cPouta · Week 5 · commit {{ short_revision }}</footer>
 </div>
 </body>
 </html>

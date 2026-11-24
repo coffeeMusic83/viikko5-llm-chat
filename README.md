@@ -39,7 +39,7 @@ ruff check .
 pytest -v
 ```
 
-## One-time server setup (Ubuntu 22.04, as `ubuntu`)
+## One-time server setup (Ubuntu 26.04, as `ubuntu`)
 
 ```bash
 # 0. Check resources and ports that are already in use

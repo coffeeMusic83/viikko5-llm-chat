@@ -1,0 +1,25 @@
+# /etc/systemd/system/viikko5.service – installed by deploy/deploy.sh
+[Unit]
+Description=Week 5 LLM chat (Flask + Gunicorn)
+After=network-online.target mariadb.service ollama.service
+Wants=network-online.target mariadb.service ollama.service
+
+[Service]
+User=viikko5
+Group=viikko5
+WorkingDirectory=/opt/viikko5/app
+EnvironmentFile=/etc/viikko5/viikko5.env
+# Listens only on localhost. Nginx is the only way in from the internet.
+ExecStart=/opt/viikko5/venv/bin/gunicorn --workers 2 --threads 4 --timeout 180 \
+          --bind 127.0.0.1:8005 --access-logfile - wsgi:app
+Restart=on-failure
+RestartSec=3
+
+# Hardening: the app cannot write to the system or read home directories.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,4 @@
+# /etc/sudoers.d/viikko5-deploy (root:root, 440). Install with:
+#   sudo visudo -cf deploy/sudoers-viikko5-deploy && sudo install -m 440 deploy/sudoers-viikko5-deploy /etc/sudoers.d/viikko5-deploy
+# The GitHub Actions user may run exactly one command as root.
+deploy ALL=(root) NOPASSWD: /usr/local/sbin/viikko5-deploy

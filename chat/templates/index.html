@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Week 5 – Self-hosted LLM chat</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<div class="wrap">
+
+  <div class="term">
+    <div class="term-bar mono">
+      <span class="dot" style="background:var(--pink)"></span>
+      <span class="dot" style="background:var(--orange)"></span>
+      <span class="dot" style="background:var(--purple)"></span>
+      viikko5@heidilinux: /opt/viikko5/app
+    </div>
+    <div class="term-body mono">
+      <div><span class="prompt">viikko5@heidilinux:~$</span> gunicorn wsgi:app</div>
+      <h1>Week 5: Self-hosted LLM chat</h1>
+      <div class="muted">A web chat with a language model running on this cPouta server. Deployed automatically with GitHub Actions.</div>
+      <div style="margin-top:12px">
+        <span class="badge">MODEL: {{ model }}</span>
+        <span class="badge green">COMMIT: {{ short_revision }}</span>
+      </div>
+    </div>
+  </div>
+
+  <h2><span>00</span>Chat</h2>
+  <div class="card">
+    <div class="chat" id="chat">
+      {% if error %}<div class="msg error"><span class="who">error</span>{{ error }}</div>{% endif %}
+      {% for m in messages %}
+        <div class="msg {{ m.role }}"><span class="who">{{ 'you@browser:~$' if m.role == 'user' else 'model@localhost:~$' }}</span><span>{{ m.content }}</span></div>
+      {% else %}
+        {% if not error %}<div class="empty" id="empty">&gt; New conversation. Say hello to the model_</div>{% endif %}
+      {% endfor %}
+    </div>
+    <form class="send" id="send-form" data-api="{{ url_for('chat') }}">
+      <textarea id="message" name="message" maxlength="2000" placeholder="Write a message… (Enter = send, Shift+Enter = new line)" required autofocus></textarea>
+      <button type="submit" id="send-button">SEND</button>
+    </form>
+    <div class="toolbar">
+      <span class="muted mono" style="font-size:13px">The conversation is stored in MariaDB and stays after reloading the page.</span>
+      <form method="post" action="{{ url_for('new_conversation') }}"><button type="submit" class="pink">NEW CHAT</button></form>
+    </div>
+    <p class="center" style="margin-bottom:0;font-size:13px">On a small CPU-only server a reply can take some seconds.</p>
+  </div>
+
+  <h2><span>01</span>Links</h2>
+  <div class="card center links">
+    <a href="{{ url_for('docs') }}">Documentation (Week 5)</a>
+    <a href="{{ repo_url }}">GitHub repository</a>
+    <a href="{{ repo_url }}/actions">GitHub Actions runs</a>
+    <a href="{{ url_for('health') }}">/viikko5/health</a>
+  </div>
+
+  <footer>Nginx → Gunicorn → Flask → Ollama + MariaDB · Ubuntu 22.04 LTS · CSC cPouta · Week 5 · commit {{ short_revision }}</footer>
+</div>
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>

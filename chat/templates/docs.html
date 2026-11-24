@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Week 5 – Documentation: CI/CD and self-hosted LLM chat</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<div class="wrap">
+
+  <div class="term">
+    <div class="term-bar mono">
+      <span class="dot" style="background:var(--pink)"></span>
+      <span class="dot" style="background:var(--orange)"></span>
+      <span class="dot" style="background:var(--purple)"></span>
+      ubuntu@heidilinux: ~/viikko5
+    </div>
+    <div class="term-body mono">
+      <div><span class="prompt">ubuntu@heidilinux:~$</span> cat viikko5/README.md</div>
+      <h1>Week 5: CI/CD Pipeline &amp; LLM Chat</h1>
+      <div class="muted">Every push to main is linted, tested and deployed to this server automatically.</div>
+      <div style="margin-top:12px">
+        <span class="badge">GITHUB ACTIONS</span>
+        <span class="badge green">RUNNING {{ short_revision }}</span>
+      </div>
+    </div>
+  </div>
+
+  <h2><span>00</span>Links</h2>
+  <div class="card">
+    <ul>
+      <li>Chat: <a href="{{ url_for('index') }}">{{ public_url }}</a></li>
+      <li>Repository: <a href="{{ repo_url }}">{{ repo_url }}</a> (workflow runs on the <a href="{{ repo_url }}/actions">Actions tab</a>)</li>
+      <li>Health endpoint: <a href="{{ url_for('health') }}">/viikko5/health</a> – returns the commit SHA of the running version (now <code>{{ revision }}</code>)</li>
+      <li>Earlier weeks keep working at their own URLs: <a href="/">/</a>, <a href="/viikko2/">/viikko2/</a>, <a href="/viikko3/">/viikko3/</a></li>
+    </ul>
+  </div>
+
+  <h2><span>01</span>Request path</h2>
+  <div class="card">
+    <div class="flow">
+      <span class="box p">Browser</span><span class="arrow">→ HTTP :80 →</span>
+      <span class="box o">Nginx (location /viikko5/)</span><span class="arrow">→ 127.0.0.1:8005 →</span>
+      <span class="box">Gunicorn + Flask (user viikko5)</span>
+    </div>
+    <div class="flow" style="margin-top:12px">
+      <span class="box">Flask</span><span class="arrow">→ 127.0.0.1:11434 →</span><span class="box g">Ollama ({{ model }})</span>
+      <span class="arrow">&nbsp;&nbsp;|&nbsp;&nbsp;</span>
+      <span class="box">Flask</span><span class="arrow">→ local socket →</span><span class="box o">MariaDB (viikko5chat)</span>
+    </div>
+    <ul style="margin-top:14px">
+      <li>Nginx strips the <code>/viikko5</code> prefix (<code>proxy_pass http://127.0.0.1:8005/;</code>) and sends
+          <code>X-Forwarded-Prefix: /viikko5</code>. Flask uses <code>ProxyFix</code>, so <code>url_for()</code> creates
+          links such as <code>/viikko5/static/style.css</code> and <code>/viikko5/api/chat</code>.</li>
+      <li>Every browser gets a random session ID in an HttpOnly cookie. Messages are saved in MariaDB with that ID, and the page
+          loads the conversation from the database. A new browser session or private window has no cookie, so it starts empty.</li>
+      <li>Only Nginx is reachable from the internet. Gunicorn and Ollama listen on <code>127.0.0.1</code> only
+          (see the <code>ss -ltnp</code> output in section 09).</li>
+    </ul>
+  </div>
+
+  <h2><span>02</span>CI/CD pipeline</h2>
+  <div class="card">
+    <p style="margin-top:0">Workflow file: <code>.github/workflows/ci-cd.yml</code>. It runs on <strong>every push and every pull request</strong>.</p>
+    <table>
+      <tr><th>Job</th><th>When</th><th>What it does</th></tr>
+      <tr><td class="mono">test</td><td>every push and PR</td>
+          <td>Installs Python 3.10 (same as Ubuntu 22.04), runs the linter <code>ruff check .</code> and the tests <code>pytest</code>.
+              The tests replace the language model and the database with fakes, so they need neither.</td></tr>
+      <tr><td class="mono">deploy</td><td>push to <code>main</code> only, <code>needs: test</code></td>
+          <td>Runs only if the test job passed. Copies the code with <code>rsync</code> over SSH as user <code>deploy</code> and runs
+              <code>sudo /usr/local/sbin/viikko5-deploy &lt;github.sha&gt;</code>. Then checks the public health endpoint.</td></tr>
+    </table>
+    <h3>What the deployment script does (deploy/deploy.sh)</h3>
+    <ol>
+      <li>Copies the code to <code>/opt/viikko5/app</code> (owner <code>root</code>, group <code>viikko5</code>, read-only for the app) and writes <code>github.sha</code> to <code>REVISION</code>.</li>
+      <li>Installs the dependencies into the virtualenv <code>/opt/viikko5/venv</code>.</li>
+      <li>Applies the database schema (<code>CREATE ... IF NOT EXISTS</code>, safe to run every time).</li>
+      <li>Installs the systemd unit from the repository and runs <code>daemon-reload</code>.</li>
+      <li>Installs the Nginx snippet, runs <code>nginx -t</code> and reloads Nginx only if the test passes. If the test fails, the old snippet is restored and the deployment stops.</li>
+      <li>Restarts only <code>viikko5.service</code>. Other services are not touched.</li>
+      <li>Polls <code>http://127.0.0.1/viikko5/health</code> until it returns the new SHA. If it does not, the script exits with an error and the workflow fails.</li>
+    </ol>
+    <h3>How a deployment is verified</h3>
+    <p style="margin-bottom:0">The server-side script checks the health endpoint through Nginx, and the last workflow step checks it again from the internet:
+       <code>curl http://SERVER/viikko5/health</code> must return <code>"commit": "&lt;github.sha&gt;"</code>, otherwise the run is red.</p>
+  </div>
+
+  <h2><span>03</span>Users, permissions and secrets</h2>
+  <div class="card">
+    <h3>Linux users</h3>
+    <table>
+      <tr><th>User</th><th>Type</th><th>Purpose</th></tr>
+      <tr><td class="mono">viikko5</td><td>system user, no login shell (<code>/usr/sbin/nologin</code>), no password</td><td>Runs the app under systemd (<code>User=viikko5</code>). Can only read the code.</td></tr>
+      <tr><td class="mono">deploy</td><td>SSH key only, no password</td><td>Used by GitHub Actions. The key is marked <code>restrict</code> in <code>authorized_keys</code> (no pty, no forwarding).
+          sudo is allowed for exactly one command: <code>/usr/local/sbin/viikko5-deploy</code>.</td></tr>
+      <tr><td class="mono">ollama</td><td>system user (created by the Ollama installer)</td><td>Runs the model server <code>ollama.service</code>.</td></tr>
+      <tr><td class="mono">ubuntu</td><td>admin</td><td>Manual setup only.</td></tr>
+    </table>
+    <h3>Files and permissions</h3>
+    <table>
+      <tr><th>Path</th><th>Owner</th><th>Mode</th><th>Note</th></tr>
+      <tr><td class="mono">/opt/viikko5/app</td><td>root:viikko5</td><td>750 / files 640</td><td>The app can read but not change its code.</td></tr>
+      <tr><td class="mono">/etc/viikko5/viikko5.env</td><td>root:viikko5</td><td>640</td><td>Database password and settings. Not in Git, not under the web root.</td></tr>
+      <tr><td class="mono">/usr/local/sbin/viikko5-deploy</td><td>root:root</td><td>755</td><td>Deployment script.</td></tr>
+      <tr><td class="mono">/etc/sudoers.d/viikko5-deploy</td><td>root:root</td><td>440</td><td>One sudo rule for <code>deploy</code>.</td></tr>
+      <tr><td class="mono">/home/deploy/.ssh/authorized_keys</td><td>deploy:deploy</td><td>600</td><td>Public key of the GitHub Actions key pair.</td></tr>
+    </table>
+    <h3>Database user</h3>
+    <p><code>viikko5app@localhost</code> has only <code>SELECT, INSERT</code> on <code>viikko5chat.messages</code>.
+       It cannot read the Week 2 database or change the schema. The schema is applied by the deployment script as root.</p>
+    <h3>Where the secrets are</h3>
+    <ul>
+      <li>Database password: only in <code>/etc/viikko5/viikko5.env</code> on the server (root and the service user can read it).</li>
+      <li>GitHub Actions secrets: <code>SSH_PRIVATE_KEY</code> (separate deploy key, not my personal key), <code>SSH_KNOWN_HOSTS</code> (server host key) and <code>SERVER_HOST</code>.</li>
+      <li><code>.gitignore</code> excludes <code>*.env</code>, keys and SQL dumps. The repository has only <code>deploy/viikko5.env.example</code> with placeholders.</li>
+    </ul>
+  </div>
+
+  <h2><span>04</span>Adding /viikko5/ to Nginx without touching other sites</h2>
+  <div class="card">
+    <ul>
+      <li>Checked the ports in use first (<code>ss -ltnp</code>, <code>systemctl list-units</code>): Nginx :80, Week 2 Gunicorn 127.0.0.1:8000, MariaDB :3306, SSH :22.
+          Chose the free port <code>127.0.0.1:8005</code> for Week 5.</li>
+      <li>The location block is in its own file <code>/etc/nginx/snippets/viikko5.conf</code> (from <code>deploy/nginx-viikko5.conf</code>).</li>
+      <li>The existing site got <strong>one new line</strong> inside its <code>server { }</code> block: <code>include snippets/viikko5.conf;</code>.
+          Nothing else in the site was changed and no site was removed.</li>
+      <li>Every deployment runs <code>nginx -t</code> before <code>systemctl reload nginx</code>.</li>
+    </ul>
+  </div>
+
+  <h2><span>05</span>Model choice, memory and disk</h2>
+  <div class="card">
+    <p style="margin-top:0">Model: <code>{{ model }}</code> (about 1 billion parameters, ~0.8 GB on disk). It fits easily in the server's memory,
+       runs on the CPU and answers in a few seconds. The model name is a setting in the environment file.</p>
+    <p class="pending" style="margin-bottom:0">Memory and disk before installing: see <code>free -h</code> / <code>df -h</code> below (section 09). No swap or resize was needed.</p>
+  </div>
+
+  <h2><span>06</span>Is the chat database replicated to server B?</h2>
+  <div class="card">
+    <p style="margin:0"><strong>No.</strong> In Week 4 the master on server A was configured with <code>binlog_do_db = viikko2</code> and the replica on B with
+       <code>replicate_do_db = viikko2</code>. The new database <code>viikko5chat</code> is not written to the binary log, so it stays on A only.
+       This is on purpose: B is a read-only replica for the Week 2 counter, the chat cannot write there, and chat messages can contain
+       personal text that does not need a second copy. The chat runs on server A, as the assignment requires.</p>
+  </div>
+
+  <h2><span>07</span>How GitHub Actions reaches the server</h2>
+  <div class="card">
+    <p style="margin-top:0">GitHub's runners connect from changing IP addresses, so the cPouta security group allows SSH (TCP 22) from <code>0.0.0.0/0</code>.</p>
+    <h3>Security implications and what limits them</h3>
+    <ul>
+      <li>Anyone can try to connect to port 22, so password login is disabled and only keys work.</li>
+      <li>The GitHub Actions key is a separate key pair. It only logs in as <code>deploy</code>, it is <code>restrict</code>ed and the private key exists only in GitHub secrets.</li>
+      <li><code>known_hosts</code> is a secret too, so the workflow refuses to connect if the server's host key changes (no man-in-the-middle).</li>
+      <li>The <code>deploy</code> user can run only the deployment script with sudo. That script installs a systemd unit, so the key is still powerful:
+          if it leaks, it must be removed from <code>authorized_keys</code> and replaced at once.</li>
+      <li>Deployments run only from <code>main</code> after the tests pass. Pull requests from forks never get the secrets.</li>
+    </ul>
+  </div>
+
+  <h2><span>08</span>Test results</h2>
+  <div class="card">
+    <table>
+      <tr><th>Test</th><th>Result</th></tr>
+      <tr><td>/viikko5/ is publicly accessible and a chat message gets a reply from the local model</td><td class="pending">pending</td></tr>
+      <tr><td>The conversation is still visible after reloading the page</td><td class="pending">pending</td></tr>
+      <tr><td>A new browser session (private window) starts with an empty conversation</td><td class="pending">pending</td></tr>
+      <tr><td>Ollama (:11434) and Gunicorn (:8005) are not reachable from the internet</td><td class="pending">pending</td></tr>
+      <tr><td>A push to main deploys automatically and /viikko5/health shows the new SHA (two deployments)</td><td class="pending">pending</td></tr>
+      <tr><td>A commit with a failing test is not deployed</td><td class="pending">pending</td></tr>
+      <tr><td>After rebooting the server the chat and Ollama start without manual steps</td><td class="pending">pending</td></tr>
+      <tr><td>Pages from earlier weeks still work after the deployment</td><td class="pending">pending</td></tr>
+    </table>
+  </div>
+
+  <h2><span>09</span>Evidence from the server</h2>
+  <div class="card">
+    <p class="muted" style="margin-top:0">Command output copied from the server. Secrets are removed.</p>
+    {% for item in evidence %}
+      <h3>{{ item.title }}</h3>
+      {% if item.text %}<pre>{{ item.text }}</pre>{% else %}<p class="pending" style="margin:0">pending</p>{% endif %}
+    {% endfor %}
+  </div>
+
+  <h2><span>10</span>Problem I solved</h2>
+  <div class="card">
+    <p class="pending" style="margin:0">pending</p>
+  </div>
+
+  <footer>Served by Nginx + Gunicorn on server A · Ubuntu 22.04 LTS · CSC cPouta · Week 5 · commit {{ short_revision }}</footer>
+</div>
+</body>
+</html>

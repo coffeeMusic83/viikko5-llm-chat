@@ -1,0 +1,22 @@
+# Secrets: never commit these
+.env
+*.env
+!deploy/viikko5.env.example
+*.pem
+*.key
+id_rsa*
+id_ed25519*
+gha_deploy*
+*dump*.sql
+*.sql.gz
+
+# Python
+__pycache__/
+*.pyc
+venv/
+.venv/
+.pytest_cache/
+.ruff_cache/
+
+# Written by the deployment, not by hand
+REVISION

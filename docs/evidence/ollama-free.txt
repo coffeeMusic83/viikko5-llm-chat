@@ -1,0 +1,19 @@
+ubuntu@heidilinux:~$ ollama run gemma3:1b "Hi" > /dev/null
+ubuntu@heidilinux:~$ ollama list
+NAME         ID              SIZE      MODIFIED
+gemma3:1b    97558784bdc9    806 MB    About an hour ago
+
+ubuntu@heidilinux:~$ ollama ps
+NAME         ID              SIZE      PROCESSOR    CONTEXT    RUNNER      UNTIL
+gemma3:1b    97558784bdc9    883 MB    100% CPU     4096       llamacpp    4 minutes from now
+
+ubuntu@heidilinux:~$ free -h          (model loaded)
+               total        used        free      shared  buff/cache   available
+Mem:           7.6Gi       1.5Gi       5.0Gi       4.1Mi       1.3Gi       6.1Gi
+Swap:             0B          0B          0B
+
+ubuntu@heidilinux:~$ df -h /
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/vda1        77G  6.5G   70G   9% /
+
+Before installing anything: 7.6Gi RAM (6.9Gi available), 77G disk (3.2G used). No swap or resize was needed.

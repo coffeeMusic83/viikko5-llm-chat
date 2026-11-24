@@ -1,0 +1,10 @@
+ubuntu@heidilinux:~$ sudo mariadb -e "SHOW GRANTS FOR 'viikko5app'@'localhost';"
++-----------------------------------------------------------------------------------------------+
+| Grants for viikko5app@localhost                                                               |
++-----------------------------------------------------------------------------------------------+
+| GRANT USAGE ON *.* TO `viikko5app`@`localhost` IDENTIFIED BY PASSWORD '<hash removed>'        |
+| GRANT SELECT, INSERT ON `viikko5chat`.`messages` TO `viikko5app`@`localhost`                  |
++-----------------------------------------------------------------------------------------------+
+
+USAGE ON *.* only means "may log in" (no privileges). The only real privileges are SELECT and INSERT
+on the chat table. The password hash was removed from this output.

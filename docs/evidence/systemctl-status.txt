@@ -1,0 +1,17 @@
+ubuntu@heidilinux:~$ systemctl status viikko5 --no-pager | head -12
+● viikko5.service - Week 5 LLM chat (Flask + Gunicorn)
+     Loaded: loaded (/etc/systemd/system/viikko5.service; enabled; preset: enabled)
+     Active: active (running) since Tue 2026-11-24 23:32:38 EET; 5min ago
+ Invocation: 5303f14e9e8f46eb9a096d2b8bc91c7f
+   Main PID: 1308 (gunicorn)
+      Tasks: 5 (limit: 7955)
+     Memory: 74.3M (peak: 74.8M)
+        CPU: 858ms
+     CGroup: /system.slice/viikko5.service
+             ├─1308 /opt/viikko5/venv/bin/python3 /opt/viikko5/venv/bin/gunicorn --workers 2 --threads 4 --timeout 180 --bind 127.0.0.1:8005 --access-logfile - wsgi:app
+             ├─1332 /opt/viikko5/venv/bin/python3 /opt/viikko5/venv/bin/gunicorn --workers 2 --threads 4 --timeout 180 --bind 127.0.0.1:8005 --access-logfile - wsgi:app
+             └─1334 /opt/viikko5/venv/bin/python3 /opt/viikko5/venv/bin/gunicorn --workers 2 --threads 4 --timeout 180 --bind 127.0.0.1:8005 --access-logfile - wsgi:app
+
+ubuntu@heidilinux:~$ systemctl show viikko5 -p User -p Group
+User=viikko5
+Group=viikko5

@@ -47,7 +47,7 @@
     <div class="flow" style="margin-top:12px">
       <span class="box">Flask</span><span class="arrow">→ 127.0.0.1:11434 →</span><span class="box g">Ollama ({{ model }})</span>
       <span class="arrow">&nbsp;&nbsp;|&nbsp;&nbsp;</span>
-      <span class="box">Flask</span><span class="arrow">→ local socket →</span><span class="box o">MariaDB (viikko5chat)</span>
+      <span class="box">Flask</span><span class="arrow">→ 127.0.0.1:3306 →</span><span class="box o">MariaDB (viikko5chat)</span>
     </div>
     <ul style="margin-top:14px">
       <li>Nginx strips the <code>/viikko5</code> prefix (<code>proxy_pass http://127.0.0.1:8005/;</code>) and sends
@@ -82,6 +82,14 @@
       <li>Restarts only <code>viikko5.service</code>. Other services are not touched.</li>
       <li>Polls <code>http://127.0.0.1/viikko5/health</code> until it returns the new SHA. If it does not, the script exits with an error and the workflow fails.</li>
     </ol>
+    <h3>Deployment history</h3>
+    <ul>
+      <li>Run #4 – commit <code>6d9b148</code>: tests passed, deployed, health returned <code>6d9b148</code>.</li>
+      <li>Run #5 – commit <code>e50fb5e</code> added a failing test: <a href="https://github.com/coffeeMusic83/viikko5-llm-chat/actions/runs/45490455234">the test job is red and the deploy job was skipped</a>
+          (<a href="https://github.com/coffeeMusic83/viikko5-llm-chat/actions/runs/45490455234/job/138787053682">pytest log</a>). The server kept running <code>6d9b148</code>.</li>
+      <li>Run #6 – commit <code>a75a5ed</code> reverted it: tests passed, deployed, health returned <code>a75a5ed</code>.</li>
+      <li>Every later push to main is deployed in the same way – see the <a href="{{ repo_url }}/actions">Actions tab</a>.</li>
+    </ul>
     <h3>How a deployment is verified</h3>
     <p style="margin-bottom:0">The server-side script checks the health endpoint through Nginx, and the last workflow step checks it again from the internet:
        <code>curl http://SERVER/viikko5/health</code> must return <code>"commit": "&lt;github.sha&gt;"</code>, otherwise the run is red.</p>
@@ -121,20 +129,28 @@
   <h2><span>04</span>Adding /viikko5/ to Nginx without touching other sites</h2>
   <div class="card">
     <ul>
-      <li>Checked the ports in use first (<code>ss -ltnp</code>, <code>systemctl list-units</code>): Nginx :80, Week 2 Gunicorn 127.0.0.1:8000, MariaDB :3306, SSH :22.
-          Chose the free port <code>127.0.0.1:8005</code> for Week 5.</li>
+      <li>Checked the ports and services in use first (<code>ss -ltnp</code>, <code>systemctl list-units</code>): Nginx :80, SSH :22,
+          Week 2 Gunicorn 127.0.0.1:8000 (<code>viikko2.service</code>), MariaDB :3306, DNS resolver :53. There was only one site,
+          <code>sites-enabled/default</code>. Chose the free port <code>127.0.0.1:8005</code> for Week 5. Ollama uses its default 127.0.0.1:11434, which was also free.</li>
+      <li>Took a backup of the site first: <code>/root/default.backup-before-viikko5</code>.</li>
       <li>The location block is in its own file <code>/etc/nginx/snippets/viikko5.conf</code> (from <code>deploy/nginx-viikko5.conf</code>).</li>
       <li>The existing site got <strong>one new line</strong> inside its <code>server { }</code> block: <code>include snippets/viikko5.conf;</code>.
-          Nothing else in the site was changed and no site was removed.</li>
+          It was added after the <code>location /viikko2/</code> block. Nothing else in the site was changed and no site was removed.</li>
+      <li>After the change <code>/</code>, <code>/viikko2/</code> and <code>/viikko3/</code> still returned 200.</li>
       <li>Every deployment runs <code>nginx -t</code> before <code>systemctl reload nginx</code>.</li>
     </ul>
   </div>
 
   <h2><span>05</span>Model choice, memory and disk</h2>
   <div class="card">
-    <p style="margin-top:0">Model: <code>{{ model }}</code> (about 1 billion parameters, ~0.8 GB on disk). It fits easily in the server's memory,
-       runs on the CPU and answers in a few seconds. The model name is a setting in the environment file.</p>
-    <p class="pending" style="margin-bottom:0">Memory and disk before installing: see <code>free -h</code> / <code>df -h</code> below (section 09). No swap or resize was needed.</p>
+    <p style="margin-top:0">Model: <code>{{ model }}</code> – 1 billion parameters, 806 MB on disk, 883 MB in memory, runs 100 % on the CPU
+       (cPouta has no GPU). It answers in a few seconds. The model name is a setting in the environment file.</p>
+    <table>
+      <tr><th></th><th>Before installing</th><th>Model loaded</th></tr>
+      <tr><td>Memory used / available (of 7.6 Gi)</td><td>709 Mi / 6.9 Gi</td><td>1.5 Gi / 6.1 Gi</td></tr>
+      <tr><td>Disk used (of 77 G)</td><td>3.2 G</td><td>6.5 G (Ollama, model, Python packages)</td></tr>
+    </table>
+    <p style="margin-bottom:0">There is plenty of free memory and disk, so no swap was added and the instance was not resized.</p>
   </div>
 
   <h2><span>06</span>Is the chat database replicated to server B?</h2>
@@ -150,12 +166,15 @@
     <p style="margin-top:0">GitHub's runners connect from changing IP addresses, so the cPouta security group allows SSH (TCP 22) from <code>0.0.0.0/0</code>.</p>
     <h3>Security implications and what limits them</h3>
     <ul>
-      <li>Anyone can try to connect to port 22, so password login is disabled and only keys work.</li>
+      <li>Anyone can try to connect to port 22, so password login is disabled and only keys work
+          (<code>sshd -T</code>: <code>passwordauthentication no</code>, <code>pubkeyauthentication yes</code>, <code>permitrootlogin prohibit-password</code>).</li>
       <li>The GitHub Actions key is a separate key pair. It only logs in as <code>deploy</code>, it is <code>restrict</code>ed and the private key exists only in GitHub secrets.</li>
       <li><code>known_hosts</code> is a secret too, so the workflow refuses to connect if the server's host key changes (no man-in-the-middle).</li>
       <li>The <code>deploy</code> user can run only the deployment script with sudo. That script installs a systemd unit, so the key is still powerful:
           if it leaks, it must be removed from <code>authorized_keys</code> and replaced at once.</li>
       <li>Deployments run only from <code>main</code> after the tests pass. Pull requests from forks never get the secrets.</li>
+      <li>The private key was generated on the server, copied to the GitHub secret and then deleted from the server with <code>shred</code>.</li>
+      <li>Other ports stay closed in the security group: only 22, 80 and 443 are open to everyone, and 3306 only from server B.</li>
     </ul>
   </div>
 
@@ -163,14 +182,14 @@
   <div class="card">
     <table>
       <tr><th>Test</th><th>Result</th></tr>
-      <tr><td>/viikko5/ is publicly accessible and a chat message gets a reply from the local model</td><td class="pending">pending</td></tr>
-      <tr><td>The conversation is still visible after reloading the page</td><td class="pending">pending</td></tr>
-      <tr><td>A new browser session (private window) starts with an empty conversation</td><td class="pending">pending</td></tr>
-      <tr><td>Ollama (:11434) and Gunicorn (:8005) are not reachable from the internet</td><td class="pending">pending</td></tr>
-      <tr><td>A push to main deploys automatically and /viikko5/health shows the new SHA (two deployments)</td><td class="pending">pending</td></tr>
-      <tr><td>A commit with a failing test is not deployed</td><td class="pending">pending</td></tr>
-      <tr><td>After rebooting the server the chat and Ollama start without manual steps</td><td class="pending">pending</td></tr>
-      <tr><td>Pages from earlier weeks still work after the deployment</td><td class="pending">pending</td></tr>
+      <tr><td>/viikko5/ is publicly accessible and a chat message gets a reply from the local model</td><td class="ok">OK – reply from gemma3:1b in the browser and via <code>curl</code></td></tr>
+      <tr><td>The conversation is still visible after reloading the page</td><td class="ok">OK – still visible after F5</td></tr>
+      <tr><td>A new browser session (private window) starts with an empty conversation</td><td class="ok">OK – "New conversation" in an incognito window</td></tr>
+      <tr><td>Ollama (:11434) and Gunicorn (:8005) are not reachable from the internet</td><td class="ok">OK – both <code>Connection timed out</code> from my computer, bound to 127.0.0.1 (section 09)</td></tr>
+      <tr><td>A push to main deploys automatically and /viikko5/health shows the new SHA (two deployments)</td><td class="ok">OK – runs #4 (<code>6d9b148</code>) and #6 (<code>a75a5ed</code>), health showed each SHA</td></tr>
+      <tr><td>A commit with a failing test is not deployed</td><td class="ok">OK – <a href="https://github.com/coffeeMusic83/viikko5-llm-chat/actions/runs/45490455234">run #5</a>: test job red, deploy skipped, server kept <code>6d9b148</code></td></tr>
+      <tr><td>After rebooting the server the chat and Ollama start without manual steps</td><td class="ok">OK – after <code>sudo reboot</code>: nginx, mariadb, ollama, viikko5, viikko2 all active, health OK</td></tr>
+      <tr><td>Pages from earlier weeks still work after the deployment</td><td class="ok">OK – <code>/</code>, <code>/viikko2/</code>, <code>/viikko3/</code> return 200 after deploy and reboot</td></tr>
     </table>
   </div>
 
@@ -183,9 +202,19 @@
     {% endfor %}
   </div>
 
-  <h2><span>10</span>Problem I solved</h2>
+  <h2><span>10</span>Problems I solved and what I learned</h2>
   <div class="card">
-    <p class="pending" style="margin:0">pending</p>
+    <h3>The server was not the Ubuntu version I thought</h3>
+    <p>I assumed Ubuntu 22.04, but <code>apt-get update</code> showed the package source <em>resolute</em>, and <code>lsb_release -d</code>
+       confirmed <strong>Ubuntu 26.04.1 LTS with Python 3.14</strong>. The CI ran the tests with Python 3.10, so a green pipeline would not have
+       proved that the code works on the server. I changed the workflow to Python 3.14 and updated the pinned packages, so CI and the server
+       now use the same Python version.</p>
+    <h3>The linter would have hidden the failing test</h3>
+    <p>My first deliberately failing test was written on one line (<code>def test(): assert 1 == 2</code>). Ruff rejects that (E701), so the run
+       would have failed in the lint step and pytest would never have run. I rewrote it on two lines, so the run shows lint green and tests red.</p>
+    <h3>A small model is not always right</h3>
+    <p style="margin-bottom:0">When I asked about "Linix" (a typo), <code>gemma3:1b</code> confidently invented an explanation. A 1B model is fast enough for a
+       CPU-only server, but its answers have to be checked.</p>
   </div>
 
   <footer>Served by Nginx + Gunicorn on server A · Ubuntu 26.04 LTS · CSC cPouta · Week 5 · commit {{ short_revision }}</footer>

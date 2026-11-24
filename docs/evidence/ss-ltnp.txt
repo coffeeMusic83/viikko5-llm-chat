@@ -1,0 +1,26 @@
+ubuntu@heidilinux:~$ sudo ss -ltnp
+State   Recv-Q  Send-Q  Local Address:Port    Peer Address:Port  Process
+LISTEN  0       80            0.0.0.0:3306         0.0.0.0:*      users:(("mariadbd",pid=1131,fd=32))
+LISTEN  0       2048        127.0.0.1:8000         0.0.0.0:*      users:(("gunicorn",pid=1331,fd=3),("gunicorn",pid=1330,fd=3),("gunicorn",pid=1305,fd=3))
+LISTEN  0       2048        127.0.0.1:8005         0.0.0.0:*      users:(("gunicorn",pid=1334,fd=5),("gunicorn",pid=1332,fd=5),("gunicorn",pid=1308,fd=5))
+LISTEN  0       4096        127.0.0.1:11434        0.0.0.0:*      users:(("ollama",pid=963,fd=4))
+LISTEN  0       512         127.0.0.1:45881        0.0.0.0:*      users:(("llama-server",pid=1822,fd=3))
+LISTEN  0       4096    127.0.0.53%lo:53           0.0.0.0:*      users:(("systemd-resolve",pid=526,fd=17))
+LISTEN  0       511           0.0.0.0:80           0.0.0.0:*      users:(("nginx",pid=1064,fd=5),("nginx",pid=1063,fd=5),...)
+LISTEN  0       4096       127.0.0.54:53           0.0.0.0:*      users:(("systemd-resolve",pid=526,fd=19))
+LISTEN  0       4096          0.0.0.0:22           0.0.0.0:*      users:(("sshd",pid=1046,fd=3),("systemd",pid=1,fd=106))
+LISTEN  0       511              [::]:80              [::]:*      users:(("nginx",pid=1064,fd=6),("nginx",pid=1063,fd=6),...)
+LISTEN  0       4096             [::]:22              [::]:*      users:(("sshd",pid=1046,fd=4),("systemd",pid=1,fd=108))
+
+Week 5:  Gunicorn 127.0.0.1:8005 and Ollama 127.0.0.1:11434 (+ its model runner on a random 127.0.0.1 port)
+         listen on localhost only. Only Nginx (:80) and SSH (:22) face the internet.
+Earlier: Week 2 Gunicorn 127.0.0.1:8000. MariaDB 0.0.0.0:3306 is needed for the Week 4 replication;
+         the cPouta security group allows 3306 only from server B's private IP 192.168.1.64/32.
+
+Checked from my own computer:
+C:\> curl -m 5 http://195.148.21.16:11434/
+curl: (28) Connection timed out after 5001 milliseconds
+C:\> curl -m 5 http://195.148.21.16:8005/
+curl: (28) Connection timed out after 5001 milliseconds
+C:\> curl -m 5 http://195.148.21.16/viikko5/health
+{"commit":"a75a5edc73178a3303cb8b7f042adc84d14dfb79","model":"gemma3:1b","status":"ok"}

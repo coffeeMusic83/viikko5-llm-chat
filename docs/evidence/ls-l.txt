@@ -1,0 +1,19 @@
+ubuntu@heidilinux:~$ sudo ls -l /opt/viikko5 /opt/viikko5/app /etc/viikko5
+/etc/viikko5:
+total 4
+-rw-r----- 1 root viikko5 264 Nov 24 22:32 viikko5.env
+
+/opt/viikko5:
+total 8
+drwxr-x--- 4 root viikko5 4096 Nov 24 23:29 app
+drwxr-xr-x 5 root root    4096 Nov 24 22:45 venv
+
+/opt/viikko5/app:
+total 20
+-rw-r----- 1 root viikko5   41 Nov 24 23:29 REVISION
+drwxr-x--- 4 root viikko5 4096 Nov 24 23:29 chat
+drwxr-x--- 3 root viikko5 4096 Nov 24 23:29 docs
+-rw-r----- 1 root viikko5   62 Nov 24 23:29 requirements.txt
+-rw-r----- 1 root viikko5   95 Nov 24 23:29 wsgi.py
+
+(No socket file: Nginx reaches the app through the localhost port 127.0.0.1:8005.)
